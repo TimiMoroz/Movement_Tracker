@@ -1,0 +1,63 @@
+<div class="left">
+    <div class="panel-content" style="padding: 20px;">
+        {% if current_user.is_authenticated %}
+        <div class="row mb-3">
+            <div class="col-6"><div class="stat"><div class="n" id="pc">0</div><div class="l">точек</div></div></div>
+            <div class="col-6"><div class="stat"><div class="n" id="dist">0</div><div class="l">км</div></div></div>
+        </div>
+        <label>Название</label>
+        <input type="text" id="rn" placeholder="Утренняя прогулка" class="mb-3">
+        <div class="flex gap-2 mb-3">
+            <button class="btn btn-g btn-s f1" onclick="save()">Сохранить</button>
+            <button class="btn btn-r btn-s f1" onclick="clear()">Очистить</button>
+        </div>
+        <hr>
+        <form method="POST" action="/savepos">
+            <label>Масштаб</label>
+            <div class="flex gap-2">
+                <input type="text" name="zoom" value="{{ map.zoom }}">
+                <input type="hidden" name="lat" id="slat" value="{{ map.lat }}">
+                <input type="hidden" name="lon" id="slon" value="{{ map.lon }}">
+                <button type="submit" class="btn btn-a btn-s">OK</button>
+            </div>
+        </form>
+        <hr>
+        <label>Сохранённые маршруты</label>
+        <div id="list"><span class="text-s">Загрузка...</span></div>
+        {% else %}
+        <div class="text-c" style="padding: 40px 0;">
+            <p class="text-s mb-3">Войдите для сохранения</p>
+            <a href="/login" class="btn btn-a btn-s btn-w mb-2">Войти</a>
+            <a href="/register" class="btn btn-o btn-s btn-w">Регистрация</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+<div class="right">
+    <div id="map"></div>
+    <div class="hint" id="hint">Клик по карте — добавить точку</div>
+</div>
+
+<script>
+    var pts=[], line=null, marks=[];
+    ymaps.ready(function(){
+        window.map=new ymaps.Map('map',{center:[{{map.lat}},{{map.lon}}],zoom:{{map.zoom}},controls:['zoomControl']});
+        map.events.add('click',function(e){add(e.get('coords'))});
+        map.events.add('boundschange',function(){var c=map.getCenter();document.getElementById('slat').value=c[0].toFixed(6);document.getElementById('slon').value=c[1].toFixed(6)});
+        {% if current_user.is_authenticated %}load();{% endif %}
+    });
+    function add(c){pts.push(c);draw();upd();}
+    function draw(){
+        if(line)map.geoObjects.remove(line);marks.forEach(function(m){map.geoObjects.remove(m)});marks=[];if(!pts.length)return;
+        line=new ymaps.Polyline(pts,{},{strokeColor:'#7c5cfc',strokeWidth:3});map.geoObjects.add(line);
+        pts.forEach(function(p,i){var pm=new ymaps.Placemark(p,{balloonContent:'<b>Точка '+(i+1)+'</b><br><span style="color:#888;font-size:12px;">'+p[0].toFixed(6)+', '+p[1].toFixed(6)+'</span><br><br><button onclick="del('+i+')" style="width:100%;padding:6px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;">Удалить</button>'},{preset:i===0?'islands#greenIcon':(i===pts.length-1?'islands#redIcon':'islands#blueIcon')});map.geoObjects.add(pm);marks.push(pm)});
+    }
+    function del(i){pts.splice(i,1);map.balloon.close();draw();upd();}
+    function clear(){pts=[];draw();upd();}
+    function upd(){document.getElementById('pc').textContent=pts.length;document.getElementById('dist').textContent=dst().toFixed(2);}
+    function dst(){var t=0;for(var i=1;i<pts.length;i++)t+=h(pts[i-1],pts[i]);return t;}
+    function h(a,b){var R=6371,d=(b[0]-a[0])*Math.PI/180,e=(b[1]-a[1])*Math.PI/180,s=Math.sin(d/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(e/2)**2;return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));}
+    function save(){if(pts.length<2)return alert('Минимум 2 точки');fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('rn').value.trim()||'Без названия',pts:pts,dist:parseFloat(dst().toFixed(2))})}).then(function(r){return r.json()}).then(function(d){if(d.id){clear();document.getElementById('rn').value='';load();}});}
+    function load(){fetch('/api/routes').then(function(r){return r.json()}).then(function(d){var h=d.length?d.map(function(x){return '<div class="item" onclick="view('+x.id+')"><b>'+x.name+'</b><br><span class="text-s">'+x.date+' · '+x.dist+' км</span></div>';}).join(''):'<span class="text-s">Нет маршрутов</span>';document.getElementById('list').innerHTML=h;});}
+    function view(id){clear();map.geoObjects.removeAll();fetch('/api/route/'+id).then(function(r){return r.json()}).then(function(d){if(d&&d.pts){map.geoObjects.add(new ymaps.Polyline(d.pts,{},{strokeColor:'#22c55e',strokeWidth:3}));new ymaps.Placemark(d.pts[0],{balloonContent:'<b>Старт</b>'},{preset:'islands#greenIcon'}).addTo(map.geoObjects);new ymaps.Placemark(d.pts[d.pts.length-1],{balloonContent:'<b>Финиш</b>'},{preset:'islands#redIcon'}).addTo(map.geoObjects);map.setBounds(map.geoObjects.getBounds());}});}
+</script>
