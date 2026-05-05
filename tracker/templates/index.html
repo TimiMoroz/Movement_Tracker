@@ -1,0 +1,155 @@
+<div class="left-panel">
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('route')">Маршрут</button>
+        <button class="tab" onclick="switchTab('search')">Поиск</button>
+    </div>
+
+    <div class="panel-content">
+        <div class="tab-content active" id="tabRoute">
+            {% if current_user.is_authenticated %}
+            <div class="stat-row">
+                <div class="stat"><div class="stat-val" id="pointsCount">0</div><div class="stat-lbl">точек</div></div>
+                <div class="stat"><div class="stat-val" id="trackDistance">0</div><div class="stat-lbl">км</div></div>
+            </div>
+
+            <label>Название</label>
+            <input type="text" id="trackName" placeholder="Утренняя прогулка" style="margin-bottom: 12px;">
+
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                <button class="btn btn-success" onclick="saveTrack()" style="flex: 1;">Сохранить</button>
+                <button class="btn btn-danger" onclick="clearTrack()" style="flex: 1;">Очистить</button>
+            </div>
+
+            <hr>
+
+            <form method="POST" action="/save_position">
+                <label>Масштаб</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" name="zoom" value="{{ map_position.zoom }}">
+                    <input type="hidden" name="lat" id="saveLat" value="{{ map_position.lat }}">
+                    <input type="hidden" name="lon" id="saveLon" value="{{ map_position.lon }}">
+                    <button type="submit" class="btn btn-primary btn-sm">OK</button>
+                </div>
+            </form>
+
+            <hr>
+
+            <label>Сохранённые треки</label>
+            <div id="miniTracksList" style="margin-top: 8px;">
+                <span style="color: #666; font-size: 13px;">Загрузка...</span>
+            </div>
+            {% else %}
+            <div style="text-align: center; padding: 40px 0;">
+                <p style="color: #888; margin-bottom: 16px;">Войдите для сохранения</p>
+                <a href="/login" class="btn btn-primary btn-block" style="margin-bottom: 8px;">Войти</a>
+                <a href="/register" class="btn btn-ghost btn-block">Регистрация</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="tab-content" id="tabSearch">
+            <form method="POST" action="/search">
+                <label>Поиск мест</label>
+                <input type="text" name="query" placeholder="кафе, аптека..." required style="margin-bottom: 10px;">
+                <button type="submit" class="btn btn-primary btn-block">Найти</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="right-panel" style="position: relative;">
+    <div id="map"></div>
+    <div class="map-hint" id="mapHint">Клик по карте — добавить точку</div>
+</div>
+
+<script>
+    var pts = [], line = null, marks = [], mode = 'route';
+
+    ymaps.ready(function() {
+        window.map = new ymaps.Map('map', {
+            center: [{{ map_position.lat }}, {{ map_position.lon }}],
+            zoom: {{ map_position.zoom }},
+            controls: ['zoomControl']
+        });
+        map.events.add('click', function(e) { if (mode === 'route') add(e.get('coords')); });
+        map.events.add('boundschange', function() {
+            var c = map.getCenter();
+            document.getElementById('saveLat').value = c[0].toFixed(6);
+            document.getElementById('saveLon').value = c[1].toFixed(6);
+        });
+        {% if current_user.is_authenticated %}loadTracks();{% endif %}
+    });
+
+    function switchTab(t) {
+        mode = t;
+        document.querySelectorAll('.tab').forEach(function(el,i){ el.classList.toggle('active', i === (t==='route'?0:1)); });
+        document.getElementById('tabRoute').classList.toggle('active', t === 'route');
+        document.getElementById('tabSearch').classList.toggle('active', t === 'search');
+        document.getElementById('mapHint').textContent = t === 'route' ? 'Клик по карте — добавить точку' : 'Поиск через форму слева';
+    }
+
+    function add(c) { pts.push(c); draw(); upd(); }
+
+    function draw() {
+        if (line) map.geoObjects.remove(line);
+        marks.forEach(function(m){ map.geoObjects.remove(m); });
+        marks = [];
+        if (!pts.length) return;
+        line = new ymaps.Polyline(pts, {}, { strokeColor: '#7c5cfc', strokeWidth: 3 });
+        map.geoObjects.add(line);
+        pts.forEach(function(p, i) {
+            var coordsText = p[0].toFixed(6) + ', ' + p[1].toFixed(6);
+            var pm = new ymaps.Placemark(p, {
+                balloonContent: '<div style="font-family: -apple-system, sans-serif; min-width: 180px;">' +
+                    '<b>Точка ' + (i + 1) + '</b><br>' +
+                    '<span style="color: #888; font-size: 13px;">' + coordsText + '</span><br><br>' +
+                    '<button onclick="del(' + i + ')" style="width: 100%; padding: 8px; background: #ef4444; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">🗑 Удалить</button>' +
+                '</div>',
+                hintContent: 'Точка ' + (i + 1) + ': ' + coordsText
+            }, {
+                preset: i === 0 ? 'islands#greenIcon' : (i === pts.length - 1 ? 'islands#redIcon' : 'islands#blueIcon')
+            });
+            map.geoObjects.add(pm);
+            marks.push(pm);
+        });
+    }
+
+    function del(i) { pts.splice(i,1); map.balloon.close(); draw(); upd(); }
+    function clearTrack() { pts = []; draw(); upd(); }
+
+    function upd() {
+        document.getElementById('pointsCount').textContent = pts.length;
+        document.getElementById('trackDistance').textContent = dist().toFixed(2);
+    }
+
+    function dist() { var t=0; for(var i=1;i<pts.length;i++) t+=h(pts[i-1],pts[i]); return t; }
+    function h(a,b) { var R=6371, d=(b[0]-a[0])*Math.PI/180, e=(b[1]-a[1])*Math.PI/180, s=Math.sin(d/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(e/2)**2; return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s)); }
+
+    function saveTrack() {
+        if (pts.length < 2) return alert('Минимум 2 точки');
+        fetch('/api/tracks/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: document.getElementById('trackName').value.trim()||'Без названия', points: pts, distance: parseFloat(dist().toFixed(2))})
+        }).then(function(r){return r.json()}).then(function(d){if(d.id){clearTrack();document.getElementById('trackName').value='';loadTracks();}});
+    }
+
+    function loadTracks() {
+        fetch('/api/tracks').then(function(r){return r.json()}).then(function(t) {
+            var h = t.length ? t.map(function(x){return '<div class="list-item" onclick="view('+x.id+')"><b>'+x.name+'</b><br><span style="color:#666;font-size:12px;">'+x.date+' · '+x.distance+' км</span></div>';}).join('') : '<span style="color:#666;">Нет треков</span>';
+            document.getElementById('miniTracksList').innerHTML = h;
+        });
+    }
+
+    function view(id) {
+        clearTrack(); map.geoObjects.removeAll();
+        fetch('/api/tracks/'+id).then(function(r){return r.json()}).then(function(t) {
+            if (t && t.points) {
+                map.geoObjects.add(new ymaps.Polyline(t.points, {}, { strokeColor: '#22c55e', strokeWidth: 3 }));
+                new ymaps.Placemark(t.points[0], { balloonContent: '<b>Старт</b><br><span style="color:#888;font-size:12px;">'+t.points[0][0].toFixed(6)+', '+t.points[0][1].toFixed(6)+'</span>' }, { preset: 'islands#greenIcon' }).addTo(map.geoObjects);
+                new ymaps.Placemark(t.points[t.points.length-1], { balloonContent: '<b>Финиш</b><br><span style="color:#888;font-size:12px;">'+t.points[t.points.length-1][0].toFixed(6)+', '+t.points[t.points.length-1][1].toFixed(6)+'</span>' }, { preset: 'islands#redIcon' }).addTo(map.geoObjects);
+                map.setBounds(map.geoObjects.getBounds());
+            }
+        });
+    }
+</script>

@@ -1,0 +1,58 @@
+<div class="left-panel">
+    <div class="panel-content">
+        <h2 style="margin-bottom: 12px;">🗺 {{ track.name }}</h2>
+        <p class="meta">
+            {{ track.date.strftime('%d.%m.%Y %H:%M') }}<br>
+            Дистанция: {{ "%.2f"|format(track.distance) }} км<br>
+            Точек: {{ points|length }}
+        </p>
+
+        <div style="display: flex; gap: 8px; margin: 16px 0;">
+            <a href="/" class="btn btn-primary btn-sm">← На главную</a>
+            <a href="/track/{{ track.id }}/delete" class="btn btn-danger btn-sm">🗑 Удалить</a>
+        </div>
+
+        <hr>
+
+        <h3>📍 Точки ({{ points|length }})</h3>
+        {% for point in points %}
+        <div class="list-item">
+            {{ loop.index }}. {{ "%.5f"|format(point[0]) }}, {{ "%.5f"|format(point[1]) }}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="right-panel">
+    <div id="map"></div>
+</div>
+
+<script>
+    ymaps.ready(function() {
+        var points = [
+            {% for point in points %}[{{ point[0] }}, {{ point[1] }}]{% if not loop.last %},{% endif %}{% endfor %}
+        ];
+
+        var map = new ymaps.Map('map', {
+            center: [{{ track.center_lat }}, {{ track.center_lon }}],
+            zoom: 14,
+            controls: ['zoomControl', 'fullscreenControl']
+        });
+
+        if (points.length > 1) {
+            map.geoObjects.add(new ymaps.Polyline(points, {}, {
+                strokeColor: '#7c5cfc', strokeWidth: 4, strokeOpacity: 0.8
+            }));
+        }
+
+        points.forEach(function(p, i) {
+            var color = i === 0 ? '#4caf93' : (i === points.length-1 ? '#f4476b' : '#7c5cfc');
+            var preset = i === 0 ? 'islands#greenIcon' : (i === points.length-1 ? 'islands#redIcon' : 'islands#blueIcon');
+            map.geoObjects.add(new ymaps.Placemark(p, {
+                balloonContent: 'Точка ' + (i+1)
+            }, { preset: preset }));
+        });
+
+        map.setBounds(map.geoObjects.getBounds(), { checkZoomRange: true });
+    });
+</script>

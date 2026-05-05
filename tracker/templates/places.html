@@ -1,0 +1,16 @@
+<div class="content-page">
+    <h2 style="margin-bottom: 20px; font-size: 20px;">Сохранённые места</h2>
+    {% if places %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+            {% for place in places %}
+            <div class="card">
+                <b>{{ place.name }}</b>
+                <p style="color: #888; font-size: 13px; margin: 4px 0;">{{ place.address }}</p>
+                <a href="/place/{{ place.id }}/delete" class="btn btn-danger btn-sm" style="margin-top: 8px;">Удалить</a>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p style="color: #888; text-align: center; padding: 40px;">Нет мест</p>
+    {% endif %}
+</div>
