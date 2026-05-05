@@ -1,0 +1,23 @@
+<div class="page">
+    <h4 class="mb-3">👤 Профиль</h4>
+    <div class="row">
+        <div class="text-c" style="width: 200px;">
+            <img src="/ava/{{ current_user.avatar }}" class="av2 mb-2">
+            <form method="POST" action="/upava" enctype="multipart/form-data" class="mb-2">
+                <input type="file" name="avatar" class="inp mb-2" style="font-size:12px;">
+                <button class="btn btn-a btn-s btn-w">Загрузить</button>
+            </form>
+            {% if current_user.avatar != 'default.png' %}
+            <a href="/delava" class="btn btn-r btn-s btn-w">Удалить</a>
+            {% endif %}
+        </div>
+        <div class="f1">
+            <div class="row mb-2">
+                <div class="col-4"><div class="stat"><div class="n">{{ current_user.username }}</div><div class="l">Логин</div></div></div>
+                <div class="col-4"><div class="stat"><div class="n">{{ rc }}</div><div class="l">Маршрутов</div></div></div>
+                <div class="col-4"><div class="stat"><div class="n">{{ pc }}</div><div class="l">Мест</div></div></div>
+            </div>
+            <div class="stat"><div class="n">{{ td }} км</div><div class="l">Общая дистанция</div></div>
+        </div>
+    </div>
+</div>

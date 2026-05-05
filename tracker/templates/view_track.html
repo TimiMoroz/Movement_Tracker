@@ -1,0 +1,25 @@
+<div class="left-panel">
+    <div class="panel-content">
+        <h4 class="mb-3">🗺 {{ track.name }}</h4>
+        <p class="text-secondary small">{{ track.date.strftime('%d.%m.%Y %H:%M') }} · {{ "%.2f"|format(track.distance) }} км · {{ points|length }} точек</p>
+        <div class="d-flex gap-2 mb-3">
+            <a href="/" class="btn btn-primary btn-sm">← Назад</a>
+            <a href="/track/{{ track.id }}/delete" class="btn btn-danger btn-sm">Удалить</a>
+        </div>
+        <hr>
+        <h5 class="mb-2">📍 Точки</h5>
+        {% for point in points %}
+        <div class="list-group-item-dark">{{ loop.index }}. {{ "%.5f"|format(point[0]) }}, {{ "%.5f"|format(point[1]) }}</div>
+        {% endfor %}
+    </div>
+</div>
+<div class="right-panel"><div id="map"></div></div>
+<script>
+    ymaps.ready(function(){
+        var pts=[{% for p in points %}[{{p[0]}},{{p[1]}}]{% if not loop.last %},{% endif %}{% endfor %}];
+        var map=new ymaps.Map('map',{center:[{{track.center_lat}},{{track.center_lon}}],zoom:14,controls:['zoomControl']});
+        if(pts.length>1)map.geoObjects.add(new ymaps.Polyline(pts,{},{strokeColor:'#7c5cfc',strokeWidth:3}));
+        pts.forEach(function(p,i){var preset=i===0?'islands#greenIcon':(i===pts.length-1?'islands#redIcon':'islands#blueIcon');map.geoObjects.add(new ymaps.Placemark(p,{balloonContent:'Точка '+(i+1)},{preset:preset}));});
+        map.setBounds(map.geoObjects.getBounds());
+    });
+</script>

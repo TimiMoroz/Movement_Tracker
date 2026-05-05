@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Маршруты</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% if page in ('index','view_route') %}
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=f3a0fe3a-b07e-4840-a1da-06f18b2ddf13&lang=ru_RU"></script>
+    {% endif %}
+    <style>
+        :root { --bg: #111; --p: #1a1a1a; --b: #2a2a2a; --t: #fff; --s: #666; --a: #7c5cfc; --g: #22c55e; --r: #ef4444; }
+        {% if not dark %}
+        :root { --bg: #f0f0f0; --p: #fff; --b: #ddd; --t: #111; --s: #888; }
+        {% endif %}
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--bg); color: var(--t); font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+        .nav { background: var(--p); border-bottom: 1px solid var(--b); padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+        .nav a { color: var(--s); text-decoration: none; padding: 6px 14px; border-radius: 6px; font-size: 14px; font-weight: 500; }
+        .nav a:hover { color: var(--t); }
+        .nav a.on { background: var(--a); color: #fff; }
+        .nav .brand { color: var(--t); font-weight: 700; font-size: 18px; padding: 0; }
+        .main { flex: 1; display: flex; overflow: hidden; }
+        .left { width: 380px; background: var(--p); border-right: 1px solid var(--b); display: flex; flex-direction: column; overflow-y: auto; }
+        .right { flex: 1; position: relative; }
+        #map { width: 100%; height: 100%; filter: grayscale(0.3) brightness(0.8); }
+        .hint { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); background: var(--p); padding: 8px 18px; border-radius: 20px; font-size: 12px; color: var(--s); border: 1px solid var(--b); pointer-events: none; z-index: 100; }
+        .av { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 2px solid var(--a); }
+        .av2 { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--a); }
+        .card { background: var(--p); border: 1px solid var(--b); border-radius: 10px; padding: 16px; color: var(--t); }
+        .item { background: var(--p); border: 1px solid var(--b); color: var(--t); border-radius: 6px; margin-bottom: 6px; padding: 10px 12px; cursor: pointer; font-size: 13px; }
+        .item:hover { background: var(--bg); }
+        .stat { background: var(--bg); border-radius: 8px; padding: 14px; text-align: center; }
+        .stat .n { font-size: 22px; font-weight: 700; color: var(--a); }
+        .stat .l { font-size: 10px; color: var(--s); text-transform: uppercase; margin-top: 2px; }
+        label { display: block; font-size: 10px; color: var(--s); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        input, .inp { width: 100%; padding: 10px; background: var(--bg); border: 1px solid var(--b); border-radius: 6px; color: var(--t); font-size: 14px; }
+        input:focus { outline: none; border-color: var(--a); }
+        .btn { padding: 10px 18px; border: none; border-radius: 6px; font-weight: 600; font-size: 14px; cursor: pointer; color: #fff; text-decoration: none; display: inline-block; text-align: center; }
+        .btn-a { background: var(--a); }
+        .btn-g { background: var(--g); color: #000; }
+        .btn-r { background: var(--r); }
+        .btn-o { background: none; border: 1px solid var(--b); color: var(--s); }
+        .btn-w { width: 100%; }
+        .btn-s { padding: 6px 12px; font-size: 12px; }
+        hr { border-color: var(--b); margin: 14px 0; }
+        .toast { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+        .center { display: flex; justify-content: center; align-items: center; width: 100%; }
+        .box { background: var(--p); padding: 40px; border-radius: 14px; width: 360px; }
+        .box h2 { text-align: center; margin-bottom: 20px; }
+        .page { flex: 1; overflow-y: auto; padding: 28px; }
+        .row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .col-4 { width: calc(33.33% - 7px); }
+        .col-6 { width: calc(50% - 5px); }
+        .col-12 { width: 100%; }
+        .mb-2 { margin-bottom: 8px; }
+        .mb-3 { margin-bottom: 14px; }
+        .gap-2 { gap: 8px; }
+        .flex { display: flex; }
+        .f1 { flex: 1; }
+        .text-s { color: var(--s); font-size: 12px; }
+        .text-c { text-align: center; }
+    </style>
+</head>
+<body>
+
+    <nav class="nav">
+        <a href="/" class="brand">📍 Маршруты</a>
+        <a href="/" class="{{ 'on' if page == 'index' }}">🗺 Карта</a>
+        {% if current_user.is_authenticated %}
+        <a href="/places" class="{{ 'on' if page == 'places' }}">📍 Места</a>
+        <a href="/profile" class="{{ 'on' if page == 'profile' }}">👤 Профиль</a>
+        {% endif %}
+        <a href="/cookies" class="{{ 'on' if page == 'cookies' }}">🍪 Куки</a>
+        <a href="/api/docs" class="{{ 'on' if page == 'api_docs' }}">📡 API</a>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            {% if dark %}
+            <a href="/theme/light" class="btn btn-o btn-s">☀️</a>
+            {% else %}
+            <a href="/theme/dark" class="btn btn-o btn-s">🌙</a>
+            {% endif %}
+            {% if current_user.is_authenticated %}
+            <a href="/profile"><img src="/ava/{{ current_user.avatar }}" class="av"></a>
+            <span style="color: var(--a); font-weight: 500;">{{ current_user.username }}</span>
+            <a href="/logout" class="btn btn-o btn-s">Выйти</a>
+            {% else %}
+            <a href="/login" class="btn btn-o btn-s">Войти</a>
+            <a href="/register" class="btn btn-a btn-s">Регистрация</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    {% with m = get_flashed_messages(with_categories=true) %}
+    {% if m %}
+    <div class="toast">
+        {% for cat, msg in m %}
+        <div class="card" style="background: {{ 'var(--g)' if cat=='success' else ('var(--r)' if cat=='error' else 'var(--a)') }}; color: #fff; margin-bottom: 6px;">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="main">
+        {% if page == 'index' %}{% include 'index.html' %}
+        {% elif page == 'view_route' %}{% include 'view_route.html' %}
+        {% elif page == 'places' %}{% include 'places.html' %}
+        {% elif page == 'profile' %}{% include 'profile.html' %}
+        {% elif page == 'login' %}{% include 'login.html' %}
+        {% elif page == 'register' %}{% include 'register.html' %}
+        {% elif page == 'cookies' %}{% include 'cookies.html' %}
+        {% elif page == 'api_docs' %}{% include 'api_docs.html' %}
+        {% endif %}
+    </div>
+
+</body>
+</html>
