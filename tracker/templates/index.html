@@ -1,0 +1,329 @@
+<div class="left">
+    <div style="padding: 20px">
+        <h4 class="mb-2">🔍 Поиск места</h4>
+        <div class="flex gap-2 mb-3">
+            <input type="text" id="searchQuery" placeholder="Парк Горького, Эрмитаж..." class="f1">
+            <button class="btn btn-a btn-s" onclick="searchPlace()">Найти</button>
+        </div>
+        <div id="searchResult"></div>
+
+        {% if current_user.is_authenticated %}
+        <button class="btn btn-a btn-w mb-3" id="btnAddMarker" onclick="showAddForm()">📍 Добавить метку</button>
+        <div id="addForm" style="display:none" class="card mb-3">
+            <h5>Новая метка (центр карты)</h5>
+            <label>Название</label><input type="text" id="markerName">
+            <label>Описание</label><textarea id="markerDesc" rows="2"></textarea>
+            <label>Категория</label>
+            <select id="markerCat">
+                {% for k, v in cats.items() %}
+                <option value="{{ k }}">{{ v.icon }} {{ v.name }}</option>
+                {% endfor %}
+            </select>
+            <label>Видимость</label>
+            <select id="markerVis">
+                <option value="all">Всем</option>
+                <option value="me">Только мне</option>
+            </select>
+            <button class="btn btn-a btn-w mb-2" onclick="addMarker()">Добавить</button>
+            <button class="btn btn-r btn-w" onclick="cancelAdd()">Отмена</button>
+        </div>
+        {% endif %}
+
+        <hr>
+        <h4>🎯 Выбранные места</h4>
+        <div id="selectedList"><span class="text-s">Нажмите «📍 Выбрать» в окне места</span></div>
+        <hr>
+        <h4>📋 Маршруты</h4>
+        <div id="miniRoutes"><span class="text-s">Загрузка...</span></div>
+    </div>
+</div>
+
+<div class="right">
+    <div id="map"></div>
+    <div class="hint" id="hint">Найдите место или добавьте метку</div>
+    <button class="btn btn-a" id="routeBtn" style="position:absolute;bottom:20px;right:20px;z-index:100" onclick="buildRoute()">🚀 Построить маршрут</button>
+    <div id="crosshair" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:50;display:none">
+        <div style="width:16px;height:16px;border:2px solid #000;border-radius:50%"></div>
+        <div style="position:absolute;top:50%;left:-8px;width:32px;height:2px;background:#000"></div>
+        <div style="position:absolute;left:50%;top:-8px;height:32px;width:2px;background:#000"></div>
+    </div>
+</div>
+
+<div id="modal">
+    <div class="card" style="max-width:500px;max-height:80vh;overflow-y:auto">
+        <h3 id="modalTitle"></h3>
+        <img id="modalPhoto" src="" style="width:100%;border-radius:8px;margin:10px 0;display:none">
+        <p id="modalDesc"></p>
+        <p><b>Почему стоит посетить:</b></p>
+        <p id="modalWhy"></p>
+        <p id="modalAuthor" class="text-s"></p>
+        <div class="flex gap-2">
+            <button class="btn btn-a f1" id="modalSelect">📍 Выбрать</button>
+            <button class="btn btn-g f1" id="modalFav">⭐ Избранное</button>
+            <button class="btn btn-r f1" id="modalDel" style="display:none">🗑 Удалить</button>
+        </div>
+        <button class="btn btn-r btn-w mt-2" onclick="closeModal()">Закрыть</button>
+    </div>
+</div>
+
+<script>
+    var map, selected=[], routeLine=null, markerList=[], currentMarker=null
+    var cats = {{ cats|tojson }}
+
+    ymaps.ready(function(){
+        map = new ymaps.Map('map', {
+            center: [{{ map.lat|default(55.751244) }}, {{ map.lon|default(37.618423) }}],
+            zoom: {{ map.zoom|default(12) }},
+            controls: ['zoomControl']
+        })
+        loadMarkers()
+        {% if current_user.is_authenticated %}loadMini(){% endif %}
+    })
+
+    function loadMarkers() {
+        fetch('/api/markers')
+        .then(function(r){ return r.json() })
+        .then(function(data){
+            markerList = data
+            map.geoObjects.removeAll()
+            data.forEach(function(m){
+                var pm = new ymaps.Placemark([m.lat, m.lon], {
+                    balloonContent: '<b>' + m.name + '</b><br>' + (m.desc || '') +
+                        '<br><span style="color:#888;font-size:11px">Автор: ' + m.author + '</span>' +
+                        '<br><button onclick="showMarkerInfo(' + m.id + ')" style="padding:4px 8px;background:#7c5cfc;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-top:4px">Подробнее</button>'
+                }, { preset: 'islands#blueIcon', iconColor: m.color })
+                map.geoObjects.add(pm)
+            })
+        })
+    }
+
+    function showMarkerInfo(id) {
+        var m = markerList.find(function(x){ return x.id === id })
+        if (!m) return
+        currentMarker = m
+        document.getElementById('modal').style.display = 'flex'
+        document.getElementById('modalTitle').textContent = m.name
+        document.getElementById('modalPhoto').style.display = 'none'
+        document.getElementById('modalDesc').textContent = m.desc || 'Нет описания'
+        document.getElementById('modalWhy').textContent = 'Категория: ' + (cats[m.cat] || {name:'Другое'}).name
+        document.getElementById('modalAuthor').textContent = 'Автор: ' + m.author
+        document.getElementById('modalSelect').onclick = function(){
+            if (selected.find(function(x){ return x.name === m.name })) return alert('Уже выбрано')
+            selected.push(m)
+            updateSelected()
+            closeModal()
+        }
+        document.getElementById('modalFav').onclick = function(){
+            fetch('/api/favorite/' + m.id, {method:'POST'})
+            .then(function(r){ return r.json() })
+            .then(function(d){
+                alert(d.status === 'added' ? '⭐ В избранном!' : 'Убрано из избранного')
+            })
+        }
+        document.getElementById('modalFav').style.display = 'block'
+        document.getElementById('modalDel').style.display = m.mine ? 'block' : 'none'
+        document.getElementById('modalDel').onclick = function(){
+            if (!confirm('Удалить метку?')) return
+            fetch('/api/del_marker/' + m.id, {method:'DELETE'})
+            .then(function(){ closeModal(); loadMarkers() })
+        }
+    }
+
+    function searchPlace() {
+        var q = document.getElementById('searchQuery').value.trim()
+        if (!q) return alert('Введите название')
+
+        document.getElementById('searchResult').innerHTML = '<span class="text-s">Поиск...</span>'
+
+        fetch('/api/search_place', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({query: q})
+        })
+        .then(function(r) { return r.json() })
+        .then(function(data) {
+            if (data.error) {
+                alert(data.error)
+                document.getElementById('searchResult').innerHTML = '<span class="text-s">Ничего не найдено</span>'
+                return
+            }
+
+            // Показываем первый результат
+            var d = data[0] || data
+            currentMarker = d
+
+            document.getElementById('modal').style.display = 'flex'
+            document.getElementById('modalTitle').textContent = d.name
+            document.getElementById('modalPhoto').style.display = 'none'
+            document.getElementById('modalDesc').textContent = d.addr || ''
+            document.getElementById('modalWhy').textContent = d.why || ''
+            document.getElementById('modalAuthor').textContent = ''
+            document.getElementById('modalSelect').onclick = function() {
+                if (selected.find(function(x) { return x.name === d.name })) return alert('Уже выбрано')
+                selected.push(d)
+                updateSelected()
+                closeModal()
+            }
+            document.getElementById('modalFav').style.display = 'none'
+            document.getElementById('modalDel').style.display = 'none'
+
+            // Показываем список результатов
+            var html = ''
+            if (Array.isArray(data)) {
+                html = data.map(function(item) {
+                    return '<div class="item" onclick="showSearchResult(' + JSON.stringify(item).replace(/"/g, '&quot;') + ')"><b>' + item.name + '</b><br><span class="text-s">' + (item.addr || '') + '</span></div>'
+                }).join('')
+            } else {
+                html = '<div class="item"><b>' + d.name + '</b><br><span class="text-s">' + (d.addr || '') + '</span></div>'
+            }
+            document.getElementById('searchResult').innerHTML = html
+        })
+    }
+
+    function showSearchResult(item) {
+        currentMarker = item
+        document.getElementById('modal').style.display = 'flex'
+        document.getElementById('modalTitle').textContent = item.name
+        document.getElementById('modalPhoto').style.display = 'none'
+        document.getElementById('modalDesc').textContent = item.addr || ''
+        document.getElementById('modalWhy').textContent = item.why || ''
+        document.getElementById('modalAuthor').textContent = ''
+        document.getElementById('modalSelect').onclick = function() {
+            if (selected.find(function(x) { return x.name === item.name })) return alert('Уже выбрано')
+            selected.push(item)
+            updateSelected()
+            closeModal()
+        }
+        document.getElementById('modalFav').style.display = 'none'
+        document.getElementById('modalDel').style.display = 'none'
+    }
+
+    function showAddForm() {
+        document.getElementById('addForm').style.display = 'block'
+        document.getElementById('crosshair').style.display = 'block'
+        document.getElementById('markerName').value = ''
+        document.getElementById('markerDesc').value = ''
+    }
+
+    function cancelAdd() {
+        document.getElementById('addForm').style.display = 'none'
+        document.getElementById('crosshair').style.display = 'none'
+    }
+
+    function addMarker() {
+        var name = document.getElementById('markerName').value.trim()
+        if (!name) return alert('Введите название')
+        var c = map.getCenter()
+        fetch('/api/add_marker', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: name,
+                lat: c[0],
+                lon: c[1],
+                desc: document.getElementById('markerDesc').value,
+                cat: document.getElementById('markerCat').value,
+                vis: document.getElementById('markerVis').value
+            })
+        })
+        .then(function(r){ return r.json() })
+        .then(function(d){
+            if (d.id) {
+                document.getElementById('addForm').style.display = 'none'
+                document.getElementById('crosshair').style.display = 'none'
+                loadMarkers()
+            }
+        })
+    }
+
+    function closeModal() {
+        document.getElementById('modal').style.display = 'none'
+    }
+
+    function updateSelected() {
+        var h = selected.map(function(p, i){
+            return '<div class="item flex"><div class="f1"><b>' + p.name + '</b></div><button class="btn btn-r btn-s" onclick="removePlace(' + i + ')">✕</button></div>'
+        }).join('')
+        document.getElementById('selectedList').innerHTML = h || '<span class="text-s">Нет выбранных мест</span>'
+    }
+
+    function removePlace(i) {
+        selected.splice(i, 1)
+        updateSelected()
+    }
+
+    function buildRoute() {
+        if (selected.length < 2) return alert('Выберите минимум 2 места')
+        var pts = selected.map(function(p){ return [p.lat, p.lon] })
+        fetch('/api/build_route', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({points: pts})
+        })
+        .then(function(r){ return r.json() })
+        .then(function(d){
+            if (d.error) return alert(d.error)
+            if (routeLine) map.geoObjects.remove(routeLine)
+            routeLine = new ymaps.Polyline(d.route, {}, {
+                strokeColor: '#22c55e',
+                strokeWidth: 4
+            })
+            routeLine.events.add('click', function(){
+                if (confirm('Удалить маршрут?')) {
+                    map.geoObjects.remove(routeLine)
+                    routeLine = null
+                    document.getElementById('hint').textContent = 'Маршрут удалён'
+                    var btn = document.getElementById('routeBtn')
+                    btn.textContent = '🚀 Построить маршрут'
+                    btn.onclick = buildRoute
+                }
+            })
+            map.geoObjects.add(routeLine)
+            d.ordered.forEach(function(p, i){
+                new ymaps.Placemark(p, {
+                    balloonContent: '<b>' + (i+1) + '. ' + (selected[i] ? selected[i].name : '') + '</b>'
+                }, {
+                    preset: i === 0 ? 'islands#greenIcon' : (i === d.ordered.length-1 ? 'islands#redIcon' : 'islands#blueIcon')
+                }).addTo(map.geoObjects)
+            })
+            map.setBounds(map.geoObjects.getBounds())
+            var btn = document.getElementById('routeBtn')
+            btn.textContent = '💾 Сохранить маршрут'
+            btn.onclick = function(){
+                var name = prompt('Название маршрута:', 'Мой маршрут')
+                if (!name) return
+                fetch('/api/save_route', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: name,
+                        points: d.route,
+                        dist: d.dist,
+                        place_names: selected.map(function(p){ return p.name }).join(', ')
+                    })
+                })
+                .then(function(r){ return r.json() })
+                .then(function(data){
+                    if (data.id) {
+                        alert('Маршрут сохранён!')
+                        btn.textContent = '🚀 Построить маршрут'
+                        btn.onclick = buildRoute
+                        loadMini()
+                    }
+                })
+            }
+            document.getElementById('hint').textContent = 'Маршрут готов! ' + d.dist + ' км'
+        })
+    }
+
+    function loadMini() {
+        fetch('/api/routes_api')
+        .then(function(r){ return r.json() })
+        .then(function(data){
+            var h = data.length ? data.map(function(x){
+                return '<div class="item" onclick="location.href=\'/route/' + x.id + '\'"><b>' + x.name + '</b><br><span class="text-s">' + x.date + ' · ' + x.dist + ' км</span></div>'
+            }).join('') : '<span class="text-s">Нет маршрутов</span>'
+            document.getElementById('miniRoutes').innerHTML = h
+        })
+    }
+</script>
